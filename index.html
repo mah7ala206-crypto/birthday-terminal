@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Birthday Terminal</title>
+
+  <style>
+    body{
+      margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+      background:#05070a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      color:#c7ffcf;
+      padding:20px;
+    }
+    .term{
+      width:min(860px, 96vw);
+      border:1px solid #16351c;
+      border-radius:14px;
+      background: radial-gradient(1200px 500px at 20% 0%, rgba(0,255,120,.12), transparent 60%),
+                  linear-gradient(180deg, rgba(7,10,14,.98), rgba(3,6,8,.98));
+      box-shadow: 0 30px 80px rgba(0,0,0,.55);
+      overflow:hidden;
+    }
+    .bar{
+      display:flex; align-items:center; gap:8px;
+      padding:10px 12px;
+      background:#0a0f14;
+      border-bottom:1px solid #16351c;
+      color:#9ae6b4;
+      font-size:13px;
+    }
+    .dot{ width:10px; height:10px; border-radius:50%; }
+    .r{ background:#ff5f56;} .y{background:#ffbd2e;} .g{background:#27c93f;}
+
+    .screen{ padding:14px 14px 8px; height:min(560px, 70vh); overflow:auto; }
+    .line{ white-space:pre-wrap; line-height:1.85; font-size:15px; }
+
+    .prompt{
+      display:flex; gap:10px; align-items:center;
+      border-top:1px solid #16351c;
+      padding:10px 12px;
+      background:#06090d;
+    }
+    .pfx{ color:#7CFF8A; }
+    input{
+      flex:1;
+      background:transparent;
+      border:0;
+      outline:none;
+      color:#c7ffcf;
+      font:inherit;
+      direction:ltr;
+    }
+
+    .hint{ color:#7aa; font-size:12px; opacity:.9; padding:0 14px 12px; }
+    .badge{
+      display:inline-block; padding:4px 10px; border-radius:999px;
+      border:1px solid #1f7a3a; background:rgba(0,255,120,.10); color:#bfffd0;
+      margin:6px 0;
+    }
+    .warn{ color:#ffd37a; }
+    .ok{ color:#7CFF8A; font-weight:700; }
+
+    .hi{
+      font-size: clamp(18px, 2.4vw, 26px);
+      font-weight: 800;
+      color: #d7ffe0;
+      margin: 8px 0 10px;
+      opacity: .96;
+    }
+
+    .big-title{
+      font-size: clamp(28px, 4.2vw, 52px);
+      font-weight: 950;
+      letter-spacing: .8px;
+      color: #7CFF8A;
+      text-shadow: 0 0 18px rgba(124,255,138,.28);
+      margin: 8px 0 6px;
+    }
+    .shape-row{
+      font-size: 20px;
+      opacity: .95;
+      margin: 6px 0 10px;
+    }
+
+    /* Image in terminal */
+    .img-wrap{
+      margin:10px 0;
+      padding:10px;
+      border:1px solid #1f7a3a;
+      border-radius:12px;
+      background:rgba(0,255,120,.08);
+    }
+    .term-img{
+      width:min(420px, 95%);
+      border-radius:12px;
+      display:block;
+      margin:auto;
+      box-shadow: 0 12px 30px rgba(0,0,0,.35);
+    }
+    .caption{
+      margin-top:8px;
+      font-size:13.5px;
+      opacity:.95;
+      color:#bfffd0;
+      text-align:left;
+      line-height:1.7;
+      white-space:pre-wrap;
+    }
+
+    /* ASCII block */
+    .ascii{
+      font-family: inherit;
+      white-space: pre;
+      line-height: 1.05;   /* أقرب لإحساس الطرفية */
+      letter-spacing: .6px;
+      color:#c7ffcf;
+      background: rgba(0,255,120,.04);
+      border:1px solid #1f7a3a;
+      border-radius:10px;
+      padding:10px;
+      margin:10px 0;
+      overflow:auto;
+    }
+
+    a{ color:#7CFF8A; }
+
+    /* hidden canvas for processing */
+    canvas#hiddenCanvas{ display:none; }
+  </style>
+</head>
+
+<body>
+  <div class="term">
+    <div class="bar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span>birthday-terminal://session</span>
+    </div>
+
+    <div class="screen" id="screen"></div>
+
+    <div class="prompt">
+      <span class="pfx">user@birthday:~$</span>
+      <input id="cmd" autocomplete="off" spellcheck="false" placeholder="Type: help  then press Enter" />
+    </div>
+
+    <div class="hint">
+      Suggested commands: <b>help</b> — <b>gift</b> — <b>photo</b> — <b>ascii</b> — <b>drawcake</b> — <b>clear</b> — <b>exit</b>
+    </div>
+  </div>
+
+  <!-- hidden canvas used to convert image -> ASCII -->
+  <canvas id="hiddenCanvas"></canvas>
+
+<script>
+  // ✨ Customize here:
+  const PERSON = "toto";
+  const GIFT_LINK = "";                 // optional link
+  const GIFT_CODE = "BDAY-2026";        // your code
+  const IMAGE_PATH = "images/cake.png"; // image to use
+
+  // Message under the cake + two hearts at the end
+  const CAKE_MESSAGE =
+`happy birthday!!
+I'm glad that I met someone like you I’m always proud of you and I wish you’ll have the best that you always wanted and I hope you always be happy thanks for being a part of my life Your presence in my life brings so much joy and happiness. I am grateful for the memories we've shared and the moments we've yet to create. Wishing you a fantastic birthday and an incredible year ahead 💖💖`;
+
+  const screen = document.getElementById("screen");
+  const cmd = document.getElementById("cmd");
+
+  function addLine(text="", cls=""){
+    const div = document.createElement("div");
+    div.className = "line " + cls;
+    div.textContent = text;
+    screen.appendChild(div);
+    screen.scrollTop = screen.scrollHeight;
+  }
+
+  function addHTML(html, cls=""){
+    const div = document.createElement("div");
+    div.className = "line " + cls;
+    div.innerHTML = html;
+    screen.appendChild(div);
+    screen.scrollTop = screen.scrollHeight;
+  }
+
+  function addImage(src, captionText=""){
+    const wrap = document.createElement("div");
+    wrap.className = "img-wrap";
+
+    const img = document.createElement("img");
+    img.className = "term-img";
+    img.src = src;
+    img.alt = "gift image";
+
+    img.onerror = () => {
+      wrap.innerHTML = "";
+      const warn = document.createElement("div");
+      warn.className = "line warn";
+      warn.textContent = `Image not found: ${src}  (check images folder + file name)`;
+      wrap.appendChild(warn);
+    };
+
+    wrap.appendChild(img);
+
+    if(captionText){
+      const cap = document.createElement("div");
+      cap.className = "caption";
+      cap.textContent = captionText;
+      wrap.appendChild(cap);
+    }
+
+    screen.appendChild(wrap);
+    screen.scrollTop = screen.scrollHeight;
+  }
+
+  // -------- Boot logs
+  const boot = [
+    "[ boot ] initializing birthday protocol v1.0 ...",
+    "[ ok   ] loading surprises module ...",
+    "[ ok   ] decrypting wishes ...",
+    "[ ok   ] session started ✅",
+    ""
+  ];
+
+  async function typeLines(lines){
+    for(const l of lines){
+      await new Promise(r => setTimeout(r, 220));
+      addLine(l);
+    }
+  }
+
+  function showGreeting(){
+    addHTML(`<div class="hi">Hi, ${PERSON}</div>`);
+    addHTML(`<div class="big-title">Happy Birthday to you 🎉</div>`);
+    addHTML(`<div class="shape-row">✨ ✨ 🎁 ✨ ✨</div>`);
+    addLine("Type: gift  to reveal your surprise");
+    addLine("");
+  }
+
+  // ---------------- Commands
+  function help(){
+    addLine("");
+    addLine("Available commands:", "ok");
+    addLine("  help      : show commands");
+    addLine("  gift      : reveal gift code + image + message");
+    addLine("  photo     : show image + message only");
+    addLine("  ascii     : render the cake image as ASCII (terminal art)");
+    addLine("  drawcake  : print a ready ASCII cake");
+    addLine("  open      : open gift link (if set)");
+    addLine("  clear     : clear screen");
+    addLine("  exit      : end session");
+    addLine("");
+  }
+
+  function photo(){
+    addLine("");
+    addLine("📷 Opening photo...", "badge");
+    addImage(IMAGE_PATH, CAKE_MESSAGE);
+    addLine("");
+  }
+
+  function gift(){
+    addLine("");
+    addLine("🎁 gift payload:", "badge");
+    addLine(`Gift code: ${GIFT_CODE}`, "ok");
+    addImage(IMAGE_PATH, CAKE_MESSAGE);
+    if(GIFT_LINK && GIFT_LINK.trim() !== ""){
+      addLine(`Gift link: ${GIFT_LINK}`);
+      addLine("Type: open  to open the link.");
+    } else {
+      addLine("No link set — the code is the gift 😄", "warn");
+    }
+    addLine("");
+  }
+
+  function clearScreen(){ screen.innerHTML = ""; }
+
+  function openLink(){
+    if(GIFT_LINK && GIFT_LINK.trim() !== ""){
+      window.open(GIFT_LINK, "_blank");
+      addLine("[ ok ] opened gift link ✅");
+    } else {
+      addLine("[ warn ] no gift link to open.");
+    }
+  }
+
+  function exitSession(){
+    addLine("session terminated. bye 👋");
+  }
+
+  // ---------- ASCII from image (image -> characters)
+  // Settings you can tweak:
+  const ASCII_WIDTH = 80; // عدد الحروف في السطر (كلما زاد، صارت أدق)
+  const ASCII_CHARS = " .,:;il!I?*+~^-_[]{}()|/\\tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$"; // من فاتح إلى داكن
+
+  async function ascii(){
+    addLine("");
+    addLine("[ ascii ] converting image to terminal art ...", "badge");
+
+    try{
+      const asciiBlock = await imageToAscii(IMAGE_PATH, ASCII_WIDTH, ASCII_CHARS);
+      // اطبعه بشكل تدريجي (سطر بسطر) للشعور بالرسم
+      await printASCIIProgressive(asciiBlock);
+      addLine("");
+    }catch(err){
+      addLine(`[ error ] ${err.message}`, "warn");
+      addLine("Tip: make sure IMAGE_PATH exists (images/cake.png).", "warn");
+    }
+  }
+
+  // Convert image to ASCII string (multiple lines)
+  function imageToAscii(src, width, charset){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        // scale keeping ratio
+        const aspect = img.height / img.width;
+        const canvas = document.getElementById("hiddenCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // NOTE: في النصوص، ارتفاع الحرف ~ 2x العرض، فنقلل الارتفاع لإبقاء النسبة لطيفة
+        const targetW = width;
+        const targetH = Math.max(1, Math.floor(targetW * aspect * 0.52));
+
+        canvas.width = targetW;
+        canvas.height = targetH;
+
+        // رسم الصورة مصغّرة
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        const data = ctx.getImageData(0, 0, targetW, targetH).data;
+
+        const n = charset.length - 1;
+        let out = "";
+        for(let y=0; y<targetH; y++){
+          let row = "";
+          for(let x=0; x<targetW; x++){
+            const idx = (y*targetW + x) * 4;
+            const r = data[idx], g = data[idx+1], b = data[idx+2];
+            // grayscale luminance
+            const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+            const k = Math.round((lum/255) * n);
+            const ch = charset[k];
+            row += ch;
+          }
+          out += row + "\n";
+        }
+        resolve(out);
+      };
+      img.onerror = () => reject(new Error("Cannot load image"));
+      img.src = src;
+    });
+  }
+
+  // Print ASCII progressively with <pre> container
+  async function printASCIIProgressive(asciiString){
+    const pre = document.createElement("pre");
+    pre.className = "ascii";
+    screen.appendChild(pre);
+    screen.scrollTop = screen.scrollHeight;
+
+    const lines = asciiString.split("\n");
+    for(const line of lines){
+      pre.textContent += line + "\n";
+      await new Promise(r => setTimeout(r, 10)); // سرعة الرسم (قلليها لتصير أسرع)
+      screen.scrollTop = screen.scrollHeight;
+    }
+  }
+
+  // ---------- Ready-made ASCII cake (no image)
+  function drawcake(){
+    addLine("");
+    addLine("🍰 ASCII cake:", "badge");
+    const cake = String.raw`
+           ,,,,,,,,,,
+         ,;'''''',''';,
+       ,;';'''';''''';;,           _
+      ;';'''';'''''';'';         _|=|_
+     ;';''   H  A  P  P  Y     __|===|__      *
+     ;';'''';'''''';'''';     /  |===|  \    / \
+     ;';'''';'''''';'''';    /___|===|___\  /_ _\
+      ';'''';'''''';''' ;       (  | |  )     |
+       ';''  B  I  R  T H       (  | |  )    _|_
+        ';'''';'''''';''         (     )    (___)
+          ';'';'''';';            (___)
+            ';;;;;;;;               | |
+           =========               _| |_
+          |  C A K E |            (_____)
+    `;
+    addHTML(`<pre class="ascii">${cake}</pre>`);
+    addLine("");
+  }
+
+  // Register commands
+  const commands = {
+    help,
+    gift,
+    photo,
+    ascii,
+    drawcake,
+    open: openLink,
+    clear: clearScreen,
+    exit: exitSession
+  };
+
+  // Shell
+  cmd.addEventListener("keydown", async (e)=>{
+    if(e.key !== "Enter") return;
+    const raw = cmd.value;
+    const v = raw.trim().toLowerCase();
+    if(!v) return;
+
+    addLine(`user@birthday:~$ ${raw}`);
+    cmd.value = "";
+
+    const fn = commands[v];
+    if(fn) await fn();
+    else addLine(`command not found: ${v}  (type help)`, "warn");
+  });
+
+  // Boot then greeting
+  (async () => {
+    await typeLines(boot);
+    showGreeting();
+  })();
+</script>
+</body>
+</html>
